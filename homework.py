@@ -100,7 +100,6 @@ def parse_status(homework: Dict) -> str:
     homework_name = homework.get('homework_name')
     if homework_name is None:
         message = ('Отсутствие ключей в ответе API.')
-        logging.error(message, exc_info=True)
         raise KeyError(message)
     status = homework.get('status')
     if status not in HOMEWORK_VERDICTS:
@@ -122,7 +121,8 @@ def main():
     while True:
         try:
             response = get_api_answer(timestamp)
-            homeworks = check_response(response)
+            check_response(response)
+            homeworks = response.get('homeworks')
             if homeworks:
                 message = parse_status(homeworks[0])
                 if message != sent_message:
