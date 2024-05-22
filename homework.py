@@ -50,16 +50,17 @@ def check_tokens() -> bool:
         'TELEGRAM_TOKEN': TELEGRAM_TOKEN,
         'TELEGRAM_CHAT_ID': TELEGRAM_CHAT_ID,
     }
-    for token in tokens:
-        if tokens[token] is None:
-            logger.critical('Token %s not found', token)
-            return False
-    return True
+    error_messages: dict = []
+    for token in tokens.items():
+        if token is None:
+            error_messages.append(f'Токен {token} отсутствует!')
+    return error_messages
 
 
 def send_message(bot: Bot, message) -> None:
     """Отправка сообщения."""
     try:
+        logging.info('Начало отправки сообщения')
         bot.send_message(
             text=message,
             chat_id=TELEGRAM_CHAT_ID)
@@ -72,16 +73,11 @@ def get_api_answer(timestamp) -> Dict:
     """Запрос к серверу Яндекс."""
     payload = {'from_date': timestamp}
     try:
+        logging.info('Начало запроса к API')
         response = requests.get(ENDPOINT, headers=HEADERS, params=payload)
         if response.status_code == HTTPStatus.OK:
             logger.debug('Response: OK')
             return response.json()
-        logger.error(
-            'API can not reach ENDPOINT with args: %s, %s, %s',
-            payload,
-            ENDPOINT,
-            HEADERS
-        )
         raise exceptions.EmptyAPIResponseError
     except requests.RequestException as error:
         logger.error('get_api_answer() error %s', error.args)
@@ -91,75 +87,57 @@ def check_response(response) -> None:
     """Проверка ответа от сервера."""
     if not isinstance(response, dict):
         raise TypeError('response is not Dict type')
+    if not response.get('homeworks'):
+        raise KeyError('В ответе API домашки нет ключа "homeworks".')
     if not isinstance(response.get('homeworks'), list):
         raise TypeError('"homeworks" in response is not List type')
     if 'current_date' not in response:
-        raise TypeError('key "current_date" not in response')
+        raise KeyError('key "current_date" not in response')
 
 
 def parse_status(homework: Dict) -> str:
     """Поиск статуса отдельной работы."""
     homework_name = homework.get('homework_name')
-    homework_status = homework.get('status')
-    status_answer = HOMEWORK_VERDICTS.get(homework_status)
-    if not homework_name or not status_answer:
-        logger.error('parse_status() income data error')
-        raise exceptions.ParseStatusError
-    HISTORY[homework_name] = status_answer
-    return (
-        'Изменился статус проверки работы '
-        f'"{homework_name}"\n'
-        f'{status_answer}'
-    )
-
-
-def history_status_check(homework):
-    """Возвращает результат проверки статуса на обновления."""
-    homework_name = homework.get('homework_name')
-    homework_status = HOMEWORK_VERDICTS.get(homework.get('status'))
-    history_status = HISTORY.get(homework_name)
-    if history_status != homework_status:
-        return parse_status(homework)
-    logger.debug('No updates')
-    return ''
-
-
-def try_send_message(bot, message):
-    """Предпринимает попытку отправки сообщения.
-    Логирует неудачную отправку.
-    """
-    try:
-        send_message(bot, message)
-    except (exceptions.FailedToSendMessageError, SystemExit) as error:
-        logger.error('Failed to send message %s', error)
+    if homework_name is None:
+        message = ('Отсутствие ключей в ответе API.')
+        logging.error(message, exc_info=True)
+        raise KeyError(message)
+    status = homework.get('status')
+    if status not in HOMEWORK_VERDICTS:
+        raise KeyError('Недокументированный статус домашней работы')
+    verdict = HOMEWORK_VERDICTS[status]
+    return f'Изменился статус проверки работы "{homework_name}". {verdict}'
 
 
 def main():
     """Основная логика работы бота."""
-    if not check_tokens():
+    if check_tokens():
         logger.critical('Tokens not found')
         raise exceptions.TokenNotFoundError()
     bot = Bot(token=TELEGRAM_TOKEN)
     timestamp = int(time.time()) - CHECK_PERIOD
+    sent_message = ''
+    sent_error = ''
 
     while True:
-        message: str = ''
         try:
             response = get_api_answer(timestamp)
-            check_response(response)
-            homeworks = response.get('homeworks')
-            for homework in homeworks:
-                message = history_status_check(homework)
-        except exceptions.EmptyAPIResponseError:
-            message = 'API вернул пустой ответ'
-        except TypeError:
-            message = 'API вернул неправильный ответ'
-        except requests.RequestException:
-            message = 'Произошла ошибка запроса'
-        except exceptions.ParseStatusError:
-            message = 'Ошибка расшифровки статуса'
+            homeworks = check_response(response)
+            if homeworks:
+                message = parse_status(homeworks[0])
+                if message != sent_message:
+                    send_message(bot, message)
+                sent_message = message
+            else:
+                logger.debug('Статус домашней работы не изменился')
+        except Exception as error:
+            message_error = f'Сбой в работе программы: {error}'
+            send_message(bot, message_error)
+            logger.error(message_error)
+            if message_error != sent_error:
+                send_message(bot, message_error)
+                sent_message = message_error
         finally:
-            try_send_message(bot, message)
             time.sleep(RETRY_PERIOD)
 
 
