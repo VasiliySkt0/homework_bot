@@ -56,7 +56,6 @@ def check_tokens():
             missing_tokens.append(token)
     if missing_tokens:
         logger.critical(f'Отсутствующие токены: {missing_tokens}')
-        #Не получается отправить задание без лога в этой функции
     return missing_tokens
 
 
