@@ -43,18 +43,21 @@ stream_handler.setFormatter(log_formatter)
 logger.addHandler(stream_handler)
 
 
-def check_tokens() -> bool:
-    """Проверка токенов на наличие."""
+def check_tokens():
+    """Проверяет доступность токенов."""
     tokens = {
         'PRACTICUM_TOKEN': PRACTICUM_TOKEN,
         'TELEGRAM_TOKEN': TELEGRAM_TOKEN,
-        'TELEGRAM_CHAT_ID': TELEGRAM_CHAT_ID,
+        'TELEGRAM_CHAT_ID': TELEGRAM_CHAT_ID
     }
-    error_messages: dict = []
-    for token in tokens.items():
-        if token is None:
-            error_messages.append(f'Токен {token} отсутствует!')
-    return error_messages
+    missing_tokens = []
+    for token in tokens:
+        if not tokens.get(token):
+            missing_tokens.append(token)
+    if missing_tokens:
+        logger.critical(f'Отсутствующие токены: {missing_tokens}')
+        #Не получается отправить задание без лога в этой функции
+    return missing_tokens
 
 
 def send_message(bot: Bot, message) -> None:
