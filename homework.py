@@ -68,6 +68,7 @@ def send_message(bot: Bot, message) -> None:
             chat_id=TELEGRAM_CHAT_ID)
         logger.debug('Message sent')
     except telegram.error.TelegramError as error:
+        logger.error(f'Ошибка в отправке сообщения: {error}')
         raise exceptions.FailedToSendMessageError(error)
 
 
